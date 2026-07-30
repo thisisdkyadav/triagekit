@@ -1,0 +1,92 @@
+# TriageKit — nginx snippet
+#
+# Drop this INSIDE an existing `server { ... }` block for your site, or use the
+# standalone server block at the bottom.
+#
+# Layout: the SPA is served as static files under /issue-management, and /api
+# is proxied to the TriageKit API on 127.0.0.1:8080. Both live on ONE origin,
+# so the frontend is built with VITE_API_URL empty (same-origin requests) and
+# there are no CORS concerns.
+
+# ── The SPA ──────────────────────────────────────────────────
+# Redirect the bare path to the trailing-slash form so `alias` resolves.
+location = /issue-management {
+    return 301 /issue-management/;
+}
+
+location /issue-management/ {
+    alias /var/www/triagekit/;
+
+    # Client-side routing: unknown paths fall back to the SPA shell.
+    try_files $uri $uri/ /issue-management/index.html;
+}
+
+# Vite emits content-hashed asset filenames, so these can be cached hard.
+# More specific prefix than the block above, so it wins for /assets/*.
+location /issue-management/assets/ {
+    alias /var/www/triagekit/assets/;
+    expires 1y;
+    add_header Cache-Control "public, immutable";
+    access_log off;
+}
+
+# Never cache the HTML shell, or browsers pin an old bundle after an update.
+location = /issue-management/index.html {
+    alias /var/www/triagekit/index.html;
+    add_header Cache-Control "no-store";
+}
+
+# ── The API ──────────────────────────────────────────────────
+location /api/ {
+    proxy_pass http://127.0.0.1:8080;
+
+    proxy_http_version 1.1;
+    proxy_set_header Host              $host;
+    proxy_set_header X-Real-IP         $remote_addr;
+    proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+
+    proxy_read_timeout 60s;
+}
+
+
+# ─────────────────────────────────────────────────────────────
+# Standalone server block — use this INSTEAD of everything above if TriageKit
+# gets its own domain. Run certbot afterwards to add TLS.
+#
+# For a domain root deployment, also set in /etc/triagekit/triagekit.env:
+#   APP_BASE_PATH=/
+#   VITE_APP_BASE_PATH=/
+# then re-run scripts/install.sh to rebuild the frontend.
+# ─────────────────────────────────────────────────────────────
+#
+# server {
+#     listen 80;
+#     server_name triage.example.com;
+#
+#     root /var/www/triagekit;
+#     index index.html;
+#
+#     location / {
+#         try_files $uri $uri/ /index.html;
+#     }
+#
+#     location /assets/ {
+#         expires 1y;
+#         add_header Cache-Control "public, immutable";
+#         access_log off;
+#     }
+#
+#     location = /index.html {
+#         add_header Cache-Control "no-store";
+#     }
+#
+#     location /api/ {
+#         proxy_pass http://127.0.0.1:8080;
+#         proxy_http_version 1.1;
+#         proxy_set_header Host              $host;
+#         proxy_set_header X-Real-IP         $remote_addr;
+#         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+#         proxy_set_header X-Forwarded-Proto $scheme;
+#     }
+# }

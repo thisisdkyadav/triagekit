@@ -1,0 +1,10 @@
+# Build output
+target/
+node_modules/
+dist/
+
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+.DS_Store

@@ -1,0 +1,47 @@
+[Unit]
+Description=TriageKit API
+Documentation=https://github.com/thisisdkyadav/triagekit
+After=network-online.target
+Wants=network-online.target
+# If the database runs on this same host, uncomment the matching line so
+# TriageKit starts after it:
+# After=mongod.service
+# After=postgresql.service
+
+# Never give up restarting: the DB may be slow to come up on boot.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=triagekit
+Group=triagekit
+
+EnvironmentFile=/etc/triagekit/triagekit.env
+ExecStart=/usr/local/bin/triagekit-server
+
+Restart=always
+RestartSec=3
+
+WorkingDirectory=/var/lib/triagekit
+StateDirectory=triagekit
+
+# Logs go to the journal: journalctl -u triagekit -f
+StandardOutput=journal
+StandardError=journal
+
+# ── Hardening ────────────────────────────────────────────────
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+ReadWritePaths=/var/lib/triagekit
+
+[Install]
+WantedBy=multi-user.target
