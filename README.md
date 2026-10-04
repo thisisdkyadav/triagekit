@@ -103,15 +103,23 @@ All settings come from `.env` (see `.env.example` for the annotated list).
 
 ## Deploying (Linux + systemd + nginx)
 
-One command on the server:
+One command on the server — **no Rust or Node needed**, it downloads a prebuilt
+static binary and SPA from the latest GitHub release:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/thisisdkyadav/triagekit/main/scripts/install.sh | sudo bash
 ```
 
-It builds the API and the SPA, writes `/etc/triagekit/triagekit.env` with
-generated secrets, installs `triagekit.service` (enabled + `Restart=always`),
-starts it on `127.0.0.1:8080`, and prints the owner login once.
+It installs the API to `/usr/local/bin`, writes `/etc/triagekit/triagekit.env`
+with generated secrets, publishes the SPA to `/var/www/triagekit`, installs
+`triagekit.service` (enabled + `Restart=always`), starts it on
+`127.0.0.1:8080`, and prints the owner login once. Prefer to build locally?
+`--from-source`.
+
+> Prebuilt install needs a published release. Cut one by pushing a tag
+> (`git tag v0.1.0 && git push origin v0.1.0`) — the release workflow builds
+> the static binary + web bundle. Until then the installer falls back to
+> building from source (needs Rust + Node).
 
 Then edit the one config file and re-run to apply:
 

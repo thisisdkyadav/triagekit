@@ -6,15 +6,13 @@ the API. One origin, so no CORS to think about.
 
 ## Prerequisites
 
-- systemd Linux, root/sudo
-- Rust (stable) and Node 18+ — used to build; not needed at runtime
+- systemd Linux (x86-64), root/sudo, `curl`
 - A database: **MongoDB** (default) or **PostgreSQL**
 - nginx
 
-```bash
-# Rust, if missing
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-```
+That's it for the default (prebuilt) install — **no Rust or Node needed**, the
+binary is a static download. You only need toolchains for `--from-source`:
+Rust (stable) to build the API, Node 18+ to build the SPA.
 
 ## 1. Install
 
@@ -22,27 +20,36 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 curl -fsSL https://raw.githubusercontent.com/thisisdkyadav/triagekit/main/scripts/install.sh | sudo bash
 ```
 
-Or from a checkout:
+By default this **downloads a prebuilt static binary and web bundle** from the
+latest GitHub release (checksum-verified) — so a fresh server needs no build
+toolchain. It:
 
-```bash
-git clone https://github.com/thisisdkyadav/triagekit.git
-cd triagekit
-sudo ./scripts/install.sh
-```
-
-The installer:
-
-1. clones/updates the source into `/opt/triagekit`
+1. downloads `triagekit-server` (static, musl) to `/usr/local/bin`
 2. creates the `triagekit` system user
 3. writes `/etc/triagekit/triagekit.env` with **generated secrets** (never
    overwritten on re-run)
-4. builds the API and installs it to `/usr/local/bin/triagekit-server`
-5. builds the SPA and publishes it to `/var/www/triagekit`
-6. installs + enables `triagekit.service` and starts it
-7. prints the owner login and password **once**
+4. downloads + publishes the SPA to `/var/www/triagekit`
+5. installs + enables `triagekit.service` and starts it
+6. prints the owner login and password **once**
 
-> If Rust was installed via rustup as your normal user, root won't see `cargo`.
-> Run `sudo -E env "PATH=$PATH" ./scripts/install.sh`.
+Install options:
+
+```bash
+# a specific version instead of latest
+curl -fsSL .../install.sh | sudo TRIAGEKIT_VERSION=v0.1.0 bash
+
+# build locally instead of downloading (needs Rust, + Node unless --skip-web)
+sudo ./scripts/install.sh --from-source
+
+# API only; you serve the SPA yourself
+sudo ./scripts/install.sh --skip-web
+```
+
+> **No release published yet?** The prebuilt download will 404 and the installer
+> falls back to building from source (needs Rust/Node). Publish a release first
+> (see [Cutting a release](#8-cutting-a-release-maintainers)), or use
+> `--from-source` deliberately. If Rust was installed via rustup as your normal
+> user, root won't see `cargo` — run `sudo -E env "PATH=$PATH" ./scripts/install.sh --from-source`.
 
 ## 2. Configure
 
@@ -67,9 +74,11 @@ At minimum set:
 > are **not** stripped — they become part of the value. Keep comments on their
 > own line and quote values containing spaces.
 
-`VITE_API_URL` and `VITE_APP_BASE_PATH` are **baked into the JS bundle at build
-time**. After changing either, re-run `install.sh` so the frontend is rebuilt.
-Leave `VITE_API_URL` empty for the same-origin nginx setup below.
+`VITE_API_URL` and `VITE_APP_BASE_PATH` are **baked into the JS bundle**. Leave
+`VITE_API_URL` empty for the same-origin nginx setup below and keep
+`VITE_APP_BASE_PATH` at `/issue-management` to use the prebuilt SPA as-is. If you
+change the base path, re-running `install.sh` rebuilds the SPA from source
+(needs Node) to match.
 
 Changes that only affect the API (secrets, database, ports) need just:
 
@@ -152,6 +161,31 @@ sudo /opt/triagekit/scripts/uninstall.sh --purge   # remove everything but the D
 ```
 
 The database is never touched; drop it yourself if you want the data gone.
+
+## 8. Cutting a release (maintainers)
+
+Prebuilt install works only once a GitHub release exists with the binary +
+web bundle attached. The `.github/workflows/release.yml` workflow builds and
+uploads them automatically when you push a version tag:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The workflow (also runnable from the Actions tab) produces a **static musl
+x86-64 binary** (`triagekit-server-linux-x86_64`), the prebuilt SPA
+(`triagekit-web.tar.gz`, built with the default base path
+`/issue-management` and same-origin API), and `SHA256SUMS`, then attaches all
+three to the release. `scripts/install.sh` downloads and verifies them.
+
+Notes:
+
+- The prebuilt SPA is baked with `VITE_APP_BASE_PATH=/issue-management` and an
+  empty `VITE_API_URL`. Servers using a **different base path** get the SPA
+  built from source instead (so those need Node), or can keep the default.
+- ARM / non-x86-64 hosts have no prebuilt binary yet — install with
+  `--from-source`.
 
 ---
 

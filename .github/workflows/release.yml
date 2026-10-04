@@ -1,0 +1,100 @@
+name: release
+
+# Cut a release by pushing a tag:
+#   git tag v0.1.0 && git push origin v0.1.0
+#
+# This builds a static (musl) Linux x86_64 API binary and the prebuilt web
+# bundle, then attaches them to a GitHub Release. scripts/install.sh downloads
+# these so servers need no Rust/Node toolchain.
+#
+# You can also run it by hand from the Actions tab (workflow_dispatch).
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to build (e.g. v0.1.0)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      # Fully static x86_64 binary: runs on any Linux, no glibc/OpenSSL needed.
+      TARGET: x86_64-unknown-linux-musl
+      # Web bundle is built with these baked in; must match the installer's
+      # defaults so the prebuilt SPA works out of the box for same-origin nginx.
+      VITE_APP_BASE_PATH: /issue-management
+      VITE_API_URL: ""
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── API binary (static musl) ──────────────────────────────
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+
+      - name: Install musl toolchain
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/server/target
+          key: cargo-${{ runner.os }}-${{ env.TARGET }}-${{ hashFiles('apps/server/Cargo.lock') }}
+
+      - name: Build API
+        # Point ring's C build (cc-rs) and the Rust linker at the musl-gcc that
+        # musl-tools installs; cc-rs otherwise looks for the target-prefixed
+        # x86_64-linux-musl-gcc, which the package doesn't provide.
+        env:
+          CC_x86_64_unknown_linux_musl: musl-gcc
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
+        run: |
+          cargo build --release --locked \
+            --manifest-path apps/server/Cargo.toml \
+            --target "$TARGET"
+
+      # ── Web bundle ────────────────────────────────────────────
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Build web
+        run: |
+          npm --prefix apps/web ci --no-audit --no-fund
+          npm --prefix apps/web run build
+
+      # ── Package artifacts ─────────────────────────────────────
+      - name: Package
+        run: |
+          mkdir -p dist
+          cp "apps/server/target/${TARGET}/release/triagekit-server" \
+             dist/triagekit-server-linux-x86_64
+          tar -czf dist/triagekit-web.tar.gz -C apps/web/dist .
+          cd dist
+          sha256sum triagekit-server-linux-x86_64 triagekit-web.tar.gz > SHA256SUMS
+          ls -la
+          file triagekit-server-linux-x86_64 || true
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          files: |
+            dist/triagekit-server-linux-x86_64
+            dist/triagekit-web.tar.gz
+            dist/SHA256SUMS
